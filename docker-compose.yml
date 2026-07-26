@@ -1,0 +1,33 @@
+version: "3.8"
+
+services:
+  bot:
+    build: .
+    container_name: trieste_tycoon_bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./trieste_tycoon.db:/app/trieste_tycoon.db
+    ports:
+      - "8080:8080"
+    networks:
+      - tycoon_network
+
+  # Opzionale: serve la WebApp con Nginx
+  webapp:
+    image: nginx:alpine
+    container_name: trieste_tycoon_webapp
+    restart: unless-stopped
+    volumes:
+      - ./webapp:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "80:80"
+    networks:
+      - tycoon_network
+
+networks:
+  tycoon_network:
+    driver: bridge

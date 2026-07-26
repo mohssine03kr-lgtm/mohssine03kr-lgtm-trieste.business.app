@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Trieste Business Tycoon 🏙️</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #1a1a2e; color: #fff; overflow: hidden; }
+
+        #map { height: 100vh; width: 100%; z-index: 1; }
+
+        /* Day/Night Overlay */
+        .daynight-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            pointer-events: none; z-index: 2; transition: background 2s ease;
+        }
+        .daynight-overlay.night { background: rgba(10, 10, 40, 0.45); }
+        .daynight-overlay.dawn { background: rgba(255, 140, 80, 0.15); }
+        .daynight-overlay.dusk { background: rgba(80, 40, 120, 0.25); }
+
+        /* Stars at night */
+        .stars {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            pointer-events: none; z-index: 3; opacity: 0; transition: opacity 2s ease;
+        }
+        .stars.active { opacity: 1; }
+        .star {
+            position: absolute; width: 2px; height: 2px; background: white;
+            border-radius: 50%; animation: twinkle 2s ease-in-out infinite;
+        }
+        @keyframes twinkle { 0%,100% { opacity: 0.3; } 50% { opacity: 1; } }
+
+        /* Moon/Sun indicator */
+        .celestial-indicator {
+            position: fixed; top: 55px; right: 15px; z-index: 1001;
+            background: rgba(22, 33, 62, 0.9); border-radius: 20px;
+            padding: 6px 14px; font-size: 14px; display: flex; align-items: center; gap: 8px;
+            border: 1px solid rgba(233,69,96,0.3); backdrop-filter: blur(5px);
+        }
+
+        /* Event Banner */
+        .event-banner {
+            position: fixed; top: 55px; left: 15px; right: 100px; z-index: 1001;
+            background: linear-gradient(90deg, #e94560, #ff6b6b);
+            border-radius: 10px; padding: 8px 14px; font-size: 12px;
+            display: none; align-items: center; gap: 8px; animation: slideInBanner 0.5s ease;
+            box-shadow: 0 4px 15px rgba(233,69,96,0.4);
+        }
+        .event-banner.active { display: flex; }
+        @keyframes slideInBanner { from { transform: translateX(-100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        .event-banner i { font-size: 16px; }
+
+        /* Header */
+        .game-header {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+            background: linear-gradient(135deg, #16213e 0%, #0f3460 100%);
+            padding: 8px 15px; display: flex; justify-content: space-between; align-items: center;
+            box-shadow: 0 2px 15px rgba(0,0,0,0.4);
+        }
+        .game-header h1 { font-size: 16px; color: #e94560; }
+        .stats-bar { display: flex; gap: 15px; font-size: 13px; }
+        .stat-item { display: flex; align-items: center; gap: 5px; }
+        .stat-item i { color: #e94560; }
+
+        /* Bottom Nav */
+        .bottom-nav {
+            position: fixed; bottom: 0; left: 0; right: 0; z-index: 1000;
+            background: linear-gradient(135deg, #16213e 0%, #0f3460 100%);
+            display: flex; justify-content: space-around; padding: 8px 0;
+            box-shadow: 0 -2px 15px rgba(0,0,0,0.4);
+        }
+        .nav-btn {
+            background: none; border: none; color: #a0a0a0;
+            font-size: 11px; display: flex; flex-direction: column; align-items: center; gap: 3px;
+            cursor: pointer; transition: all 0.3s; padding: 5px 10px;
+        }
+        .nav-btn i { font-size: 18px; }
+        .nav-btn.active, .nav-btn:hover { color: #e94560; transform: translateY(-2px); }
+
+        /* Panels */
+        .panel {
+            position: fixed; top: 50px; bottom: 60px; left: 0; right: 0;
+            background: rgba(22, 33, 62, 0.97); z-index: 500;
+            overflow-y: auto; padding: 15px; display: none;
+            animation: slideUp 0.3s ease;
+        }
+        .panel.active { display: block; }
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+        .panel-title { font-size: 20px; margin-bottom: 15px; color: #e94560; text-align: center; }
+
+        /* Cards */
+        .card {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            border-radius: 12px; padding: 15px; margin-bottom: 12px;
+            border: 1px solid rgba(233, 69, 96, 0.2);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .card:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(233, 69, 96, 0.2); }
+        .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .card-title { font-size: 16px; font-weight: bold; }
+        .card-badge { background: #e94560; padding: 3px 10px; border-radius: 15px; font-size: 11px; }
+        .card-info { font-size: 13px; color: #a0a0a0; line-height: 1.6; }
+        .card-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+
+        /* Buttons */
+        .btn {
+            padding: 8px 16px; border: none; border-radius: 8px;
+            font-size: 13px; cursor: pointer; transition: all 0.2s;
+            font-weight: bold;
+        }
+        .btn-primary { background: #e94560; color: white; }
+        .btn-primary:hover { background: #ff6b6b; transform: scale(1.05); }
+        .btn-secondary { background: #0f3460; color: white; }
+        .btn-secondary:hover { background: #1a4a7a; }
+        .btn-success { background: #2ecc71; color: white; }
+        .btn-success:hover { background: #27ae60; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* Filters */
+        .filters { display: flex; gap: 8px; margin-bottom: 15px; flex-wrap: wrap; justify-content: center; }
+        .filter-btn {
+            padding: 6px 14px; border: 1px solid #e94560; background: transparent;
+            color: #e94560; border-radius: 20px; font-size: 12px; cursor: pointer;
+            transition: all 0.2s;
+        }
+        .filter-btn.active, .filter-btn:hover { background: #e94560; color: white; }
+
+        /* Building Animation */
+        .building-animation {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.85); z-index: 2000;
+            display: none; justify-content: center; align-items: center; flex-direction: column;
+        }
+        .building-animation.active { display: flex; }
+        .building-3d {
+            width: 120px; height: 160px; background: linear-gradient(180deg, #e94560 0%, #c73e54 100%);
+            border-radius: 8px 8px 0 0; position: relative;
+            animation: buildUp 2s ease forwards; transform-origin: bottom;
+        }
+        @keyframes buildUp {
+            0% { transform: scaleY(0); opacity: 0; }
+            50% { transform: scaleY(0.5); opacity: 0.7; }
+            100% { transform: scaleY(1); opacity: 1; }
+        }
+        .building-roof {
+            position: absolute; top: -20px; left: -10px; right: -10px;
+            height: 25px; background: #8B0000; border-radius: 5px 5px 0 0;
+            animation: roofAppear 0.5s ease 2s forwards; opacity: 0;
+        }
+        @keyframes roofAppear { to { opacity: 1; } }
+        .building-text {
+            margin-top: 30px; font-size: 24px; color: #e94560;
+            animation: textPulse 1s ease infinite;
+        }
+        @keyframes textPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+        /* Particles */
+        .particle {
+            position: absolute; width: 8px; height: 8px; border-radius: 50%;
+            animation: particleBurst 1.5s ease forwards;
+        }
+        @keyframes particleBurst {
+            0% { transform: translate(0,0) scale(1); opacity: 1; }
+            100% { transform: translate(var(--tx), var(--ty)) scale(0); opacity: 0; }
+        }
+
+        /* Confetti */
+        .confetti {
+            position: absolute; width: 10px; height: 10px;
+            animation: confettiFall 2s ease forwards;
+        }
+        @keyframes confettiFall {
+            0% { transform: translateY(-100vh) rotate(0deg); opacity: 1; }
+            100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+        }
+
+        /* Reviews */
+        .review-card {
+            background: rgba(255,255,255,0.05); border-radius: 10px; padding: 12px; margin-bottom: 10px;
+        }
+        .review-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .reviewer-name { font-weight: bold; font-size: 14px; }
+        .review-stars { color: #f1c40f; font-size: 14px; }
+        .review-text { font-size: 13px; color: #ccc; line-height: 1.5; }
+        .review-tag {
+            display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; margin-top: 5px;
+        }
+        .tag-positive { background: rgba(46, 204, 113, 0.2); color: #2ecc71; }
+        .tag-neutral { background: rgba(241, 196, 15, 0.2); color: #f1c40f; }
+        .tag-negative { background: rgba(231, 76, 60, 0.2); color: #e74c3c; }
+
+        .rating-bars { margin: 15px 0; }
+        .rating-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 5px; }
+        .rating-bar-label { width: 40px; font-size: 12px; }
+        .rating-bar-track { flex: 1; height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden; }
+        .rating-bar-fill { height: 100%; background: #e94560; border-radius: 4px; transition: width 0.5s ease; }
+        .rating-bar-count { width: 30px; font-size: 11px; text-align: right; color: #a0a0a0; }
+
+        /* Review Form */
+        .review-form { margin-top: 15px; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 10px; }
+        .star-rating { display: flex; gap: 5px; font-size: 24px; margin: 10px 0; }
+        .star-rating i { cursor: pointer; color: #555; transition: color 0.2s; }
+        .star-rating i.active, .star-rating i:hover { color: #f1c40f; }
+        .review-input {
+            width: 100%; padding: 10px; border-radius: 8px; border: 1px solid rgba(233,69,96,0.3);
+            background: rgba(255,255,255,0.05); color: white; font-size: 13px; resize: vertical;
+            min-height: 60px; margin-top: 10px;
+        }
+
+        /* Customer dots */
+        .customer-dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            animation: customerMove 3s ease-in-out infinite;
+        }
+        .customer-happy { background: #2ecc71; box-shadow: 0 0 8px #2ecc71; }
+        .customer-neutral { background: #f1c40f; box-shadow: 0 0 8px #f1c40f; }
+        .customer-angry { background: #e74c3c; box-shadow: 0 0 8px #e74c3c; }
+        @keyframes customerMove {
+            0%, 100% { transform: translate(0,0); }
+            25% { transform: translate(10px, -5px); }
+            50% { transform: translate(-5px, 10px); }
+            75% { transform: translate(5px, 5px); }
+        }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.8); z-index: 1500;
+            display: none; justify-content: center; align-items: center; padding: 20px;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal-content {
+            background: linear-gradient(135deg, #16213e 0%, #1a1a2e 100%);
+            border-radius: 16px; padding: 25px; max-width: 400px; width: 100%;
+            border: 1px solid rgba(233,69,96,0.3); max-height: 80vh; overflow-y: auto;
+        }
+        .modal-title { font-size: 20px; margin-bottom: 15px; color: #e94560; text-align: center; }
+        .modal-close {
+            position: absolute; top: 15px; right: 15px; background: none; border: none;
+            color: #fff; font-size: 24px; cursor: pointer;
+        }
+
+        /* Leaderboard panel */
+        .leaderboard-item {
+            display: flex; align-items: center; gap: 12px;
+            padding: 12px; background: rgba(255,255,255,0.05);
+            border-radius: 10px; margin-bottom: 8px;
+        }
+        .leaderboard-rank {
+            width: 36px; height: 36px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: bold; font-size: 14px;
+        }
+        .rank-1 { background: linear-gradient(135deg, #FFD700, #FFA500); color: #000; }
+        .rank-2 { background: linear-gradient(135deg, #C0C0C0, #A0A0A0); color: #000; }
+        .rank-3 { background: linear-gradient(135deg, #CD7F32, #B87333); color: #fff; }
+        .rank-other { background: rgba(255,255,255,0.1); color: #a0a0a0; }
+        .leaderboard-name { flex: 1; font-size: 14px; }
+        .leaderboard-score { font-weight: bold; color: #e94560; font-size: 14px; }
+
+        /* Event card in market */
+        .event-card {
+            background: linear-gradient(135deg, rgba(233,69,96,0.2), rgba(255,107,107,0.1));
+            border: 1px solid rgba(233,69,96,0.4); border-radius: 12px;
+            padding: 15px; margin-bottom: 12px;
+        }
+        .event-card h3 { color: #e94560; margin-bottom: 8px; font-size: 16px; }
+        .event-timer { font-size: 12px; color: #f1c40f; margin-top: 8px; }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #1a1a2e; }
+        ::-webkit-scrollbar-thumb { background: #e94560; border-radius: 3px; }
+
+        /* Responsive */
+        @media (max-width: 400px) {
+            .game-header h1 { font-size: 14px; }
+            .stats-bar { font-size: 11px; gap: 10px; }
+            .nav-btn { font-size: 10px; }
+            .nav-btn i { font-size: 16px; }
+            .event-banner { font-size: 11px; right: 90px; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Day/Night Overlay -->
+    <div class="daynight-overlay" id="daynightOverlay"></div>
+    <div class="stars" id="starsContainer"></div>
+
+    <!-- Celestial Indicator -->
+    <div class="celestial-indicator" id="celestialIndicator">
+        <span id="celestialIcon">☀️</span>
+        <span id="celestialTime">--:--</span>
+    </div>
+
+    <!-- Event Banner -->
+    <div class="event-banner" id="eventBanner">
+        <i class="fas fa-bullhorn"></i>
+        <span id="eventBannerText"></span>
+    </div>
+
+    <!-- Header -->
+    <div class="game-header">
+        <h1>🏙️ Trieste Business Tycoon</h1>
+        <div class="stats-bar">
+            <div class="stat-item"><i class="fas fa-coins"></i> <span id="header-balance">5,000€</span></div>
+            <div class="stat-item"><i class="fas fa-star"></i> <span id="header-xp">0</span></div>
+            <div class="stat-item"><i class="fas fa-trophy"></i> <span id="header-level">1</span></div>
+        </div>
+    </div>
+
+    <!-- Map -->
+    <div id="map"></div>
+
+    <!-- Building Animation -->
+    <div class="building-animation" id="buildingAnim">
+        <div class="building-3d">
+            <div class="building-roof"></div>
+        </div>
+        <div class="building-text" id="buildText">🏗️ Costruzione in corso...</div>
+    </div>
+
+    <!-- Modal -->
+    <div class="modal-overlay" id="modal">
+        <div class="modal-content" style="position:relative;">
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+            <div id="modal-body"></div>
+        </div>
+    </div>
+
+    <!-- Panels -->
+    <div class="panel" id="panel-properties">
+        <div class="panel-title">🏢 Proprietà Disponibili</div>
+        <div class="filters">
+            <button class="filter-btn active" onclick="filterProperties('all')">Tutti</button>
+            <button class="filter-btn" onclick="filterProperties('food')">🍽️ Food</button>
+            <button class="filter-btn" onclick="filterProperties('tech')">💻 Tech</button>
+            <button class="filter-btn" onclick="filterProperties('industry')">🏭 Industria</button>
+            <button class="filter-btn" onclick="filterProperties('owned')">✅ Miei</button>
+        </div>
+        <div id="properties-list"></div>
+    </div>
+
+    <div class="panel" id="panel-myshops">
+        <div class="panel-title">💼 I Miei Negozi</div>
+        <div id="myshops-list"></div>
+    </div>
+
+    <div class="panel" id="panel-districts">
+        <div class="panel-title">📍 Quartieri</div>
+        <div id="districts-list"></div>
+    </div>
+
+    <div class="panel" id="panel-market">
+        <div class="panel-title">📊 Mercato & Eventi</div>
+        <div id="active-events"></div>
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">🌤️ Stagione Attuale</span>
+                <span class="card-badge" id="season-badge">Estate</span>
+            </div>
+            <div class="card-info">
+                Moltiplicatore ricavi: <strong id="season-multiplier">×1.50</strong><br>
+                <span id="season-desc">Turismo, Barcolana - Periodo d'oro!</span>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">🏆 Classifica Quartieri</span>
+            </div>
+            <div id="districts-ranking"></div>
+        </div>
+    </div>
+
+    <div class="panel" id="panel-leaderboard">
+        <div class="panel-title">🏆 Classifica Globale</div>
+        <div id="leaderboard-list"></div>
+    </div>
+
+    <!-- Bottom Nav -->
+    <div class="bottom-nav">
+        <button class="nav-btn active" onclick="showPanel('map')">
+            <i class="fas fa-map"></i> Mappa
+        </button>
+        <button class="nav-btn" onclick="showPanel('properties')">
+            <i class="fas fa-building"></i> Proprietà
+        </button>
+        <button class="nav-btn" onclick="showPanel('myshops')">
+            <i class="fas fa-store"></i> Negozi
+        </button>
+        <button class="nav-btn" onclick="showPanel('districts')">
+            <i class="fas fa-map-marker-alt"></i> Quartieri
+        </button>
+        <button class="nav-btn" onclick="showPanel('market')">
+            <i class="fas fa-chart-line"></i> Mercato
+        </button>
+        <button class="nav-btn" onclick="showPanel('leaderboard')">
+            <i class="fas fa-trophy"></i> Top
+        </button>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
